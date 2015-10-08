@@ -72,7 +72,7 @@ public abstract class SSTableRecordReader<K, V> extends RecordReader<K, V> {
             if (compressionMetadata == null) {
                 throw new IOException("Compression metadata for file " + split.getPath() + " not found, cannot run");
             }
-            this.reader = CompressedRandomAccessReader.open(split.getPath(), compressionMetadata, false, fileSystem);
+            this.reader = CompressedRandomAccessReader.open(split.getPath(), compressionMetadata, fileSystem);
         } else {
             this.reader = RandomAccessReader.open(split.getPath(), fileSystem);
         }

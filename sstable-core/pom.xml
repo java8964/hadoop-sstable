@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.fullcontact</groupId>
     <artifactId>hadoop-sstable</artifactId>
-    <version>0.1.4-ccpatch-2-hadoop2</version>
+    <version>0.1.4.1-ccpatch-2-hadoop2</version>
     <packaging>jar</packaging>
     <dependencies>
         <dependency>
