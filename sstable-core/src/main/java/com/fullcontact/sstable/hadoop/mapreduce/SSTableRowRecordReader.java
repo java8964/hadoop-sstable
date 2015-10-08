@@ -16,10 +16,10 @@
 
 package com.fullcontact.sstable.hadoop.mapreduce;
 
+import com.fullcontact.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.db.ColumnSerializer;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.io.IColumnSerializer;
-import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 import java.io.IOException;
@@ -44,8 +44,7 @@ public class SSTableRowRecordReader extends SSTableRecordReader<ByteBuffer, SSTa
         setCurrentKey(keyBytes);
 
         // Read the data size.
-        // TODO: may have to take into account the fact that files can support long or int depending on Cassandra version.
-        final long dataSize = getReader().readLong();
+        final long dataSize = getDataSize();
 
         // Read the value and set it.
         final SSTableIdentityIterator ssTableIdentityIterator = getIdentityIterator(keyBytes, dataSize);
@@ -59,7 +58,7 @@ public class SSTableRowRecordReader extends SSTableRecordReader<ByteBuffer, SSTa
         final CFMetaData cfMetaData = getCfMetaData();
 
         return new SSTableIdentityIterator(cfMetaData, getReader(), getDataPath().toString(), decoratedKey,
-                getReader().getFilePointer(), dataSize, IColumnSerializer.Flag.LOCAL);
+            dataSize, false, null, ColumnSerializer.Flag.LOCAL);
     }
 
     private DecoratedKey getDecoratedKey(final ByteBuffer keyBytes) {

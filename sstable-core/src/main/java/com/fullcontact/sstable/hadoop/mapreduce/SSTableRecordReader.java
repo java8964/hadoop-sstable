@@ -20,8 +20,9 @@ import com.fullcontact.cassandra.io.compress.CompressionMetadata;
 import com.fullcontact.cassandra.io.util.RandomAccessReader;
 import com.google.common.base.Preconditions;
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.cql3.statements.CreateColumnFamilyStatement;
+import org.apache.cassandra.cql3.statements.CreateTableStatement;
 import org.apache.cassandra.db.ColumnFamilyType;
 import org.apache.cassandra.dht.AbstractPartitioner;
 import org.apache.cassandra.dht.RandomPartitioner;
@@ -55,6 +56,14 @@ public abstract class SSTableRecordReader<K, V> extends RecordReader<K, V> {
         this.split = (SSTableSplit) inputSplit;
 
         final FileSystem fileSystem = FileSystem.get(context.getConfiguration());
+        // Temporary to get something working...re-initialize after the split has been serialized.
+        this.split.initialize(fileSystem);
+
+        Config.setClientMode(true);
+        final String pathString = split.getPath().toString();
+        if (!pathString.contains("-jb-")) {
+            throw new IllegalArgumentException("Expected data file in `jb` format, but got: " + pathString);
+        }
 
         // open the file and seek to the start of the split
         if (context.getConfiguration().getBoolean(HadoopSSTableConstants.HADOOP_SSTABLE_FILES_ISCOMPRESSION, true)) {
@@ -67,6 +76,7 @@ public abstract class SSTableRecordReader<K, V> extends RecordReader<K, V> {
         } else {
             this.reader = RandomAccessReader.open(split.getPath(), fileSystem);
         }
+
         this.reader.seek(split.getStart());
 
         this.cfMetaData = initializeCfMetaData(context);
@@ -92,10 +102,10 @@ public abstract class SSTableRecordReader<K, V> extends RecordReader<K, V> {
 
     @Override
     public float getProgress() throws IOException, InterruptedException {
-        if (split.getSize() == 0) {
+        if (split.getIndexSize() == 0) {
             return 0.0f;
         } else {
-            return Math.min(1.0f, (reader.getFilePointer() - split.getStart()) / (float) (split.getSize()));
+            return Math.min(1.0f, (reader.getFilePointer() - split.getStart()) / (float) (split.getIndexSize()));
         }
     }
 
@@ -103,7 +113,19 @@ public abstract class SSTableRecordReader<K, V> extends RecordReader<K, V> {
     public void close() throws IOException {
         if (reader != null) {
             reader.close();
+            split.close();
         }
+    }
+
+    protected long getDataSize() throws IOException {
+        final long dataSize = split.getDataSize();
+        long result = 0;
+        if (dataSize == -1) { // handle EOF
+            result = reader.length() - reader.getFilePointer();
+        } else {
+            result = dataSize;
+        }
+        return result;
     }
 
     protected RandomAccessReader getReader() {
@@ -122,7 +144,7 @@ public abstract class SSTableRecordReader<K, V> extends RecordReader<K, V> {
         final String cql = context.getConfiguration().get(HadoopSSTableConstants.HADOOP_SSTABLE_CQL);
         Preconditions.checkNotNull(cql, "Cannot proceed without CQL definition.");
 
-        final CreateColumnFamilyStatement statement = getCreateColumnFamilyStatement(cql);
+        final CreateTableStatement statement = getCreateTableStatement(cql);
 
         final String keyspace = context.getConfiguration().get(HadoopSSTableConstants.HADOOP_SSTABLE_KEYSPACE, "default");
         final String columnFamily = context.getConfiguration().get(HadoopSSTableConstants.HADOOP_SSTABLE_COLUMN_FAMILY_NAME, "default");
@@ -138,10 +160,10 @@ public abstract class SSTableRecordReader<K, V> extends RecordReader<K, V> {
         return cfMetaData;
     }
 
-    private static CreateColumnFamilyStatement getCreateColumnFamilyStatement(String cql) {
-        CreateColumnFamilyStatement statement;
+    private static CreateTableStatement getCreateTableStatement(String cql) {
+        CreateTableStatement statement;
         try {
-            statement = (CreateColumnFamilyStatement) QueryProcessor.parseStatement(cql).prepare().statement;
+            statement = (CreateTableStatement) QueryProcessor.parseStatement(cql).prepare().statement;
         } catch (RequestValidationException e) {
             // Cannot proceed if an error occurs
             throw new RuntimeException("Error configuring SSTable reader. Cannot proceed", e);

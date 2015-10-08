@@ -16,6 +16,12 @@
 
 package com.fullcontact.sstable.hadoop.mapreduce;
 
+import com.fullcontact.sstable.hadoop.IndexOffsetScanner;
+import com.fullcontact.sstable.hadoop.SSTableFunctions;
+import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.Writable;
@@ -33,46 +39,76 @@ import java.util.Arrays;
  */
 public class SSTableSplit extends InputSplit implements Writable {
 
-    private long start;
-    private long end;
+    private long dataStart;
+    private long dataEnd;
+    private FSDataInputStream indexReader;
+
+    private long idxStart; // remove?
+    private long idxEnd;   // remove?
+
     private long length;
-    private Path file;
+    private Path dataFile;
     private String[] hosts;
+
+    private boolean initialized;
 
     public SSTableSplit() {
     }
 
     /**
-     * Constructs a split with host information
+     * Constructs a split with host information - FOR TESTING
      *
-     * @param file  the file name
+     * @param dataFile  the dataFile name
      * @param hosts the list of hosts containing the block, possibly null
      */
-    public SSTableSplit(Path file, long[] offsets, long length, String[] hosts) {
-        this(file, offsets[0], offsets[offsets.length - 1], length, hosts);
+    public SSTableSplit(Path dataFile, long[] offsets, long length, String[] hosts, FileSystem fs)
+        throws IOException
+    {
+        this(dataFile, offsets[0], offsets[offsets.length - 1], length, hosts, new LocalFileSystem());
     }
 
-    public SSTableSplit(Path file, long start, long end, long length, String[] hosts) {
-        this.file = file;
+    public SSTableSplit(Path dataFile, long start, long end, long length, String[] hosts, FileSystem fs)
+        throws  IOException
+    {
+        this.dataFile = dataFile;
         this.length = length;
-        this.start = start;
-        this.end = end;
+        this.idxStart = start;
+        this.idxEnd = end;
         this.hosts = hosts;
+    }
+
+    public void initialize(FileSystem fs) throws IOException {
+        this.indexReader = fs.open(SSTableFunctions.INDEX_FILE.apply(dataFile));
+        indexReader.seek(idxStart);
+        ByteBufferUtil.readWithShortLength(indexReader);
+        this.dataStart = indexReader.readLong();
+
+        indexReader.seek(idxEnd);
+        ByteBufferUtil.readWithShortLength(indexReader);
+        this.dataEnd = indexReader.readLong();
+
+        // back to "zero" (for this split)
+        indexReader.seek(idxStart);
+
+        this.initialized = true;
+        System.out.println("Initialized split: " + this);
     }
 
     @Override
     public String toString() {
         return "SSTableSplit{" +
-                "start=" + start +
-                ", end=" + end +
-                ", file=" + file +
+                "dataStart=" + dataStart +
+                ", dataEnd=" + dataEnd +
+                ", idxStart=" + idxStart +
                 ", length=" + length +
+                ", idxEnd=" + idxEnd +
+                ", dataFile=" + dataFile +
                 ", hosts=" + Arrays.toString(hosts) +
                 '}';
     }
 
     public long getOffsetCount() {
-        return end - start;
+        return idxEnd - idxStart;
     }
 
     @Override
@@ -82,19 +118,19 @@ public class SSTableSplit extends InputSplit implements Writable {
 
     @Override
     public void write(DataOutput out) throws IOException {
-        Text.writeString(out, file.toString());
+        Text.writeString(out, dataFile.toString());
         out.writeLong(length);
-        out.writeLong(start);
-        out.writeLong(end);
+        out.writeLong(idxStart);
+        out.writeLong(idxEnd);
     }
 
     @Override
     public void readFields(DataInput in) throws IOException {
-        file = new Path(Text.readString(in));
+        dataFile = new Path(Text.readString(in));
         length = in.readLong();
-        start = in.readLong();
-        end = in.readLong();
-        hosts = null;
+        idxStart = in.readLong();
+        idxEnd = in.readLong();
+        hosts = null; // TODO: hosts!
     }
 
     @Override
@@ -107,18 +143,66 @@ public class SSTableSplit extends InputSplit implements Writable {
     }
 
     public Path getPath() {
-        return file;
+        return dataFile;
     }
 
+    /**
+     * Given an offset into the index file, return the corresponding index into the data file.
+     */
     public long getStart() {
-        return start;
+        if(!initialized) throw new IllegalStateException("Split not initialized");
+        return dataStart;
     }
 
     public long getEnd() {
-        return end;
+        if(!initialized) throw new IllegalStateException("Split not initialized");
+        return dataEnd;
     }
 
-    public int getSize() {
-        return (int) (end - start);
+    public int getIndexSize() {
+        return (int) (idxEnd - idxStart);
+    }
+
+    // warning - STATEFUL
+    // TODO move some of this to IndexOffsetScanner
+    public long getDataSize() throws IOException {
+        if(!initialized) throw new IllegalStateException("Split not initialized");
+
+        long rowStart = 0;
+        if (indexReader.available() != 0) {
+            ByteBufferUtil.readWithShortLength(indexReader);
+            rowStart = indexReader.readLong();
+            IndexOffsetScanner.skipPromotedIndex(indexReader);
+        }
+
+        long rowEnd;
+        if (indexReader.available() != 0) {
+            long savePos = indexReader.getPos();
+            ByteBufferUtil.readWithShortLength(indexReader);
+            rowEnd = indexReader.readLong();
+            IndexOffsetScanner.skipPromotedIndex(indexReader);
+            indexReader.seek(savePos);
+        } else {
+            return -1;
+        }
+
+        return rowEnd - rowStart;
+    }
+
+    /**
+     * Lazy loads Index.db
+     */
+    private long[] getIndex() {
+        return new long[]{}; // TODO
+    }
+
+    public void close() {
+        if(indexReader != null) {
+            try {
+                indexReader.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }

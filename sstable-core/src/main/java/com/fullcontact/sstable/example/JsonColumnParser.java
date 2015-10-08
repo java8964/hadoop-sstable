@@ -1,12 +1,12 @@
 package com.fullcontact.sstable.example;
 
+import com.fullcontact.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.cql3.CFDefinition;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
-import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.json.simple.JSONObject;
@@ -78,8 +78,8 @@ public class JsonColumnParser {
     private void serializeColumns(StringBuilder sb, SSTableIdentityIterator rowIterator, Mapper.Context context) {
         while (rowIterator.hasNext()) {
             OnDiskAtom atom = rowIterator.next();
-            if (atom instanceof IColumn) {
-                IColumn column = (IColumn) atom;
+            if (atom instanceof Column) {
+                Column column = (Column) atom;
                 String cn = getColumnName(column.name(), columnNameConverter);
                 sb.append("[\"");
                 sb.append(cn);

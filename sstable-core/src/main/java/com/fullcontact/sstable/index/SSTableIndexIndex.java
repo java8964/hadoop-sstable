@@ -36,7 +36,7 @@ import java.util.List;
 public class SSTableIndexIndex {
 
     public static final String SSTABLE_INDEX_SUFFIX = ".Index";
-    private static final String SSTABLE_INDEX_IN_PROGRESS_SUFFIX = ".Index.inprogress";
+    public static final String SSTABLE_INDEX_IN_PROGRESS_SUFFIX = ".Index.inprogress";
 
     private final List<Chunk> chunks = Lists.newArrayList();
 
@@ -105,13 +105,17 @@ public class SSTableIndexIndex {
             final TLongArrayList splitOffsets = new TLongArrayList();
             long currentStart = 0;
             long currentEnd = 0;
-            final IndexOffsetScanner index = new IndexOffsetScanner(sstablePath, fileSystem);
+            long currentDataStart = 0;
+            long currentDataEnd = 0;
+            final IndexOffsetScanner index = closer.register(new IndexOffsetScanner(sstablePath, fileSystem));
 
             while (index.hasNext()) {
                 // NOTE: This does not give an exact size of this split in bytes but a rough estimate.
                 // This should be good enough since it's only used for sorting splits by size in hadoop land.
-                while (currentEnd - currentStart < splitSize && index.hasNext()) {
-                    currentEnd = index.next();
+                while (currentDataEnd - currentDataStart < splitSize && index.hasNext()) {
+                    final IndexOffsetScanner.IndexEntry indexEntry = index.next();
+                    currentEnd = indexEntry.getIdxOffset();
+                    currentDataEnd = indexEntry.getDataOffset();
                     splitOffsets.add(currentEnd);
                 }
 
@@ -124,8 +128,11 @@ public class SSTableIndexIndex {
                 splitOffsets.clear();
 
                 if (index.hasNext()) {
-                    currentStart = index.next();
+                    final IndexOffsetScanner.IndexEntry indexEntry = index.next();
+                    currentStart = indexEntry.getIdxOffset();
+                    currentDataStart = indexEntry.getDataOffset();
                     currentEnd = currentStart;
+                    currentDataEnd = currentDataStart;
                     splitOffsets.add(currentStart);
                 }
             }

@@ -17,26 +17,26 @@
  */
 package com.fullcontact.cassandra.io.sstable;
 
+import java.util.EnumSet;
+
 import com.google.common.base.Objects;
+
 import org.apache.cassandra.utils.Pair;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
-import java.util.EnumSet;
-
 /**
- * Cassandra Component ported to work with HDFS.
- * <p/>
  * SSTables are made up of multiple components in separate files. Components are
  * identified by a type and an id, but required unique components (such as the Data
  * and Index files) may have implicit ids assigned to them.
  */
-public class Component {
+public class Component
+{
     public static final char separator = '-';
 
     final static EnumSet<Type> TYPES = EnumSet.allOf(Type.class);
-
-    public enum Type {
+    public enum Type
+    {
         // the base data for an sstable: the remaining components can be regenerated
         // based on the data component
         DATA("Data.db"),
@@ -54,7 +54,9 @@ public class Component {
         STATS("Statistics.db"),
         // holds sha1 sum of the data file (to be checked by sha1sum)
         DIGEST("Digest.sha1"),
-        // holds SSTable Index Summary and Boundaries
+        // holds the CRC32 for chunks in an a uncompressed file.
+        CRC("CRC.db"),
+        // holds SSTable Index Summary (sampling of Index component)
         SUMMARY("Summary.db"),
         // table of contents, stores the list of all components for the sstable
         TOC("TOC.txt"),
@@ -62,12 +64,13 @@ public class Component {
         CUSTOM(null);
 
         final String repr;
-
-        Type(String repr) {
+        Type(String repr)
+        {
             this.repr = repr;
         }
 
-        static Type fromRepresentation(String repr) {
+        static Type fromRepresentation(String repr)
+        {
             for (Type type : TYPES)
                 if (repr.equals(type.repr))
                     return type;
@@ -83,6 +86,7 @@ public class Component {
     public final static Component COMPRESSION_INFO = new Component(Type.COMPRESSION_INFO);
     public final static Component STATS = new Component(Type.STATS);
     public final static Component DIGEST = new Component(Type.DIGEST);
+    public final static Component CRC = new Component(Type.CRC);
     public final static Component SUMMARY = new Component(Type.SUMMARY);
     public final static Component TOC = new Component(Type.TOC);
 
@@ -90,12 +94,14 @@ public class Component {
     public final String name;
     public final int hashCode;
 
-    public Component(Type type) {
+    public Component(Type type)
+    {
         this(type, type.repr);
         assert type != Type.CUSTOM;
     }
 
-    public Component(Type type, String name) {
+    public Component(Type type, String name)
+    {
         assert name != null : "Component name cannot be null";
         this.type = type;
         this.name = name;
@@ -105,78 +111,64 @@ public class Component {
     /**
      * @return The unique (within an sstable) name for this component.
      */
-    public String name() {
+    public String name()
+    {
         return name;
     }
 
     /**
      * Filename of the form "<ksname>/<cfname>-[tmp-][<version>-]<gen>-<component>",
-     *
      * @return A Descriptor for the SSTable, and a Component for this particular file.
-     *         TODO move descriptor into Component field
+     * TODO move descriptor into Component field
      */
-    public static Pair<Descriptor, Component> fromFilename(Path directory, String name, FileSystem fs) {
-        Pair<Descriptor, String> path = Descriptor.fromFilename(directory, name);
+    public static Pair<Descriptor,Component> fromFilename(Path directory, String name, FileSystem fs)
+    {
+        Pair<Descriptor,String> path = Descriptor.fromFilename(directory, name);
 
         // parse the component suffix
         Type type = Type.fromRepresentation(path.right);
         // build (or retrieve singleton for) the component object
         Component component;
-        switch (type) {
-            case DATA:
-                component = Component.DATA;
-                break;
-            case PRIMARY_INDEX:
-                component = Component.PRIMARY_INDEX;
-                break;
-            case FILTER:
-                component = Component.FILTER;
-                break;
-            case COMPACTED_MARKER:
-                component = Component.COMPACTED_MARKER;
-                break;
-            case COMPRESSION_INFO:
-                component = Component.COMPRESSION_INFO;
-                break;
-            case STATS:
-                component = Component.STATS;
-                break;
-            case DIGEST:
-                component = Component.DIGEST;
-                break;
-            case SUMMARY:
-                component = Component.SUMMARY;
-                break;
-            case TOC:
-                component = Component.TOC;
-                break;
-            case CUSTOM:
-                component = new Component(Type.CUSTOM, path.right);
-                break;
+        switch(type)
+        {
+            case DATA:              component = Component.DATA;                         break;
+            case PRIMARY_INDEX:     component = Component.PRIMARY_INDEX;                break;
+            case FILTER:            component = Component.FILTER;                       break;
+            case COMPACTED_MARKER:  component = Component.COMPACTED_MARKER;             break;
+            case COMPRESSION_INFO:  component = Component.COMPRESSION_INFO;             break;
+            case STATS:             component = Component.STATS;                        break;
+            case DIGEST:            component = Component.DIGEST;                       break;
+            case CRC:               component = Component.CRC;                          break;
+            case SUMMARY:           component = Component.SUMMARY;                      break;
+            case TOC:               component = Component.TOC;                          break;
+            case CUSTOM:            component = new Component(Type.CUSTOM, path.right); break;
             default:
-                throw new IllegalStateException();
+                 throw new IllegalStateException();
         }
 
         return Pair.create(path.left, component);
     }
 
     @Override
-    public String toString() {
+    public String toString()
+    {
         return this.name();
     }
 
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(Object o)
+    {
         if (o == this)
             return true;
         if (!(o instanceof Component))
             return false;
-        Component that = (Component) o;
+        Component that = (Component)o;
         return this.type == that.type && this.name.equals(that.name);
     }
 
     @Override
-    public int hashCode() {
+    public int hashCode()
+    {
         return hashCode;
     }
 }

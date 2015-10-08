@@ -17,14 +17,9 @@
  */
 package com.fullcontact.cassandra.io.util;
 
-
 import com.fullcontact.cassandra.io.compress.CompressionMetadata;
 
-/**
- * Cassandra ICompressedFile ported to work with HDFS.
- *
- * TODO: Consider nuking this as it shouldn't be necessary.
- */
-public interface ICompressedFile {
+public interface ICompressedFile
+{
     public CompressionMetadata getMetadata();
 }
